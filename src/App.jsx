@@ -3,6 +3,9 @@ import { MessageCircle, Database, Upload, Bot } from 'lucide-react';
 import ChatInterface from './components/ChatInterface';
 import DatabaseManager from './components/DataBaseManager';
 import IngestionManager from './components/IngestionManager';
+import MemoryAnalytics from './components/MemoryAnalytics';
+import MemorySettings from './components/MemorySettings';
+import ConversationSearchManager from './components/ConversationSearchManager';
 const App = () => {
     const [activeTab, setActiveTab] = useState('chat');
 
@@ -10,6 +13,9 @@ const App = () => {
         { id: 'chat', label: 'Chat', icon: MessageCircle, component: ChatInterface },
         { id: 'database', label: 'Database', icon: Database, component: DatabaseManager },
         { id: 'ingestion', label: 'Ingestion', icon: Upload, component: IngestionManager },
+        { id: 'memoryAnalytics', label: 'Memory Analytics', icon: Bot, component: MemoryAnalytics },
+        { id: 'memorySettings', label: 'Memory Settings', icon: Bot, component: MemorySettings },
+        { id: 'conversationSearchManager', label: 'Conversation Search Manager', icon: Bot, component: ConversationSearchManager }
     ];
 
     const ActiveComponent = tabs.find(tab => tab.id === activeTab)?.component;

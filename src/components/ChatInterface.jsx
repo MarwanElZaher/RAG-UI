@@ -1,12 +1,15 @@
-
 import React, { useState, useEffect, useRef } from 'react';
-import { Bot, User, Send, MessageCircle, Code, Layers, FileText, TrendingUp, Settings, Map, Book, Database, Search, Lightbulb, Cpu } from 'lucide-react';
+import { Bot, User, Send, MessageCircle, Code, Layers, FileText, TrendingUp, Settings, Map, Book, Database, Search, Lightbulb, Cpu, Brain, History, Trash2, Download, Eye } from 'lucide-react';
 import useApi from '../hooks/useApi';
 
 const ChatInterface = () => {
     const [messages, setMessages] = useState([]);
     const [input, setInput] = useState('');
     const [intent, setIntent] = useState('qa');
+    const [conversationId, setConversationId] = useState(null);
+    const [conversationHistory, setConversationHistory] = useState([]);
+    const [showConversationPanel, setShowConversationPanel] = useState(false);
+    const [currentConversationSummary, setCurrentConversationSummary] = useState(null);
     const [contextSettings, setContextSettings] = useState({
         includeOlMap: true,
         includeMaLib: true,
@@ -20,15 +23,27 @@ const ChatInterface = () => {
     const contextDropdownRef = useRef(null);
     const { request, loading } = useApi();
 
-
     useEffect(() => {
         scrollToBottom();
     }, [messages]);
 
     useEffect(() => {
-        // Load contextual suggestions based on intent
         loadSuggestions();
     }, [intent]);
+
+    useEffect(() => {
+        loadConversationHistory();
+        // Create new conversation ID when component mounts
+        if (!conversationId) {
+            setConversationId(`conv_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`);
+        }
+    }, []);
+
+    useEffect(() => {
+        if (conversationId) {
+            loadConversationSummary();
+        }
+    }, [conversationId, messages]);
 
     // Click outside handler to close context dropdown
     useEffect(() => {
@@ -47,15 +62,6 @@ const ChatInterface = () => {
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     };
-
-    useEffect(() => {
-        scrollToBottom();
-    }, [messages]);
-
-    useEffect(() => {
-        // Load contextual suggestions based on intent
-        loadSuggestions();
-    }, [intent]);
 
     const loadSuggestions = () => {
         const suggestionMap = {
@@ -99,6 +105,92 @@ const ChatInterface = () => {
         setSuggestions(suggestionMap[intent] || []);
     };
 
+    const loadConversationHistory = async () => {
+        try {
+            const response = await request('/memory/conversations');
+            if (response.success) {
+                setConversationHistory(response.data.conversations || []);
+            }
+        } catch (error) {
+            console.error('Failed to load conversation history:', error);
+        }
+    };
+
+    const loadConversationSummary = async () => {
+        if (!conversationId) return;
+
+        try {
+            const response = await request(`/memory/conversations/${conversationId}/summary`);
+            if (response.success) {
+                setCurrentConversationSummary(response.data.summary);
+            }
+        } catch (error) {
+            console.error('Failed to load conversation summary:', error);
+        }
+    };
+
+    const createNewConversation = () => {
+        const newConversationId = `conv_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        setConversationId(newConversationId);
+        setMessages([]);
+        setCurrentConversationSummary(null);
+        console.log('🆕 Started new conversation:', newConversationId);
+    };
+
+    const loadConversation = async (convId) => {
+        try {
+            const response = await request(`/memory/conversations/${convId}`);
+            if (response.success && response.data) {
+                setConversationId(convId);
+                setMessages(response.data.messages || []);
+                setCurrentConversationSummary(null);
+                setShowConversationPanel(false);
+                console.log('📖 Loaded conversation:', convId);
+            }
+        } catch (error) {
+            console.error('Failed to load conversation:', error);
+        }
+    };
+
+    const clearCurrentConversation = async () => {
+        if (!conversationId) return;
+
+        if (confirm('Clear current conversation? This cannot be undone.')) {
+            try {
+                await request(`/memory/conversations/${conversationId}`, { method: 'DELETE' });
+                createNewConversation();
+                loadConversationHistory();
+                console.log('🗑️ Cleared conversation:', conversationId);
+            } catch (error) {
+                console.error('Failed to clear conversation:', error);
+            }
+        }
+    };
+
+    const exportConversation = async () => {
+        if (!conversationId) return;
+
+        try {
+            const response = await request(`/memory/conversations/${conversationId}`);
+            if (response.success && response.data) {
+                const blob = new Blob([JSON.stringify(response.data, null, 2)], {
+                    type: 'application/json'
+                });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `conversation_${conversationId}_${new Date().toISOString().split('T')[0]}.json`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                console.log('💾 Exported conversation:', conversationId);
+            }
+        } catch (error) {
+            console.error('Failed to export conversation:', error);
+        }
+    };
+
     const sendMessage = async (messageText = null) => {
         const messageToSend = messageText || input;
         if (!messageToSend.trim()) return;
@@ -117,10 +209,12 @@ const ChatInterface = () => {
             const requestPayload = {
                 message: messageToSend,
                 intent: intent || 'qa',
-                context: contextSettings
+                context: contextSettings,
+                conversationId: conversationId
             };
 
-            console.log('🚀 Sending chat request:', requestPayload);
+            console.log('🚀 Sending chat request with memory:', requestPayload);
+            console.log('🧠 Conversation ID:', conversationId);
             console.log('🎯 Context filters:', {
                 olMap: contextSettings.includeOlMap,
                 maLib: contextSettings.includeMaLib,
@@ -129,7 +223,6 @@ const ChatInterface = () => {
                 maxSources: contextSettings.maxSources
             });
 
-            // Enhanced request with context settings
             const response = await request('/chat', {
                 method: 'POST',
                 headers: {
@@ -138,8 +231,11 @@ const ChatInterface = () => {
                 body: JSON.stringify(requestPayload),
             });
 
-            console.log('✅ Chat response received:', response);
+            console.log('✅ Chat response with memory received:', response);
             setMessages(prev => [...prev, response]);
+
+            // Refresh conversation history to update counts
+            loadConversationHistory();
         } catch (error) {
             console.error('❌ Chat error:', error);
             const errorMessage = {
@@ -192,13 +288,11 @@ const ChatInterface = () => {
     ];
 
     const formatMessageContent = (content) => {
-        // Enhanced code block detection and formatting
         const codeBlockRegex = /```(\w+)?\n([\s\S]*?)```/g;
         const inlineCodeRegex = /`([^`]+)`/g;
 
         let formattedContent = content;
 
-        // Replace code blocks
         formattedContent = formattedContent.replace(codeBlockRegex, (match, language, code) => {
             return `<div class="code-block">
                 <div class="code-header">
@@ -209,7 +303,6 @@ const ChatInterface = () => {
             </div>`;
         });
 
-        // Replace inline code
         formattedContent = formattedContent.replace(inlineCodeRegex, '<code class="inline-code">$1</code>');
 
         return formattedContent;
@@ -285,55 +378,176 @@ const ChatInterface = () => {
         </div>
     );
 
+    const ConversationPanel = () => (
+        <div className="fixed right-0 top-0 h-full w-80 bg-white border-l border-gray-200 shadow-lg z-50 flex flex-col">
+            <div className="p-4 border-b border-gray-200">
+                <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-semibold flex items-center">
+                        <Brain className="mr-2" size={20} />
+                        Conversations
+                    </h3>
+                    <button
+                        onClick={() => setShowConversationPanel(false)}
+                        className="text-gray-500 hover:text-gray-700"
+                    >
+                        ✕
+                    </button>
+                </div>
+                <button
+                    onClick={createNewConversation}
+                    className="w-full px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
+                >
+                    New Conversation
+                </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4">
+                <div className="space-y-3">
+                    {conversationHistory.map((conv) => (
+                        <div
+                            key={conv.id}
+                            className={`p-3 rounded-lg border cursor-pointer transition-all ${conv.id === conversationId
+                                ? 'bg-blue-50 border-blue-200'
+                                : 'bg-gray-50 border-gray-200 hover:bg-gray-100'
+                                }`}
+                            onClick={() => loadConversation(conv.id)}
+                        >
+                            <div className="flex items-center justify-between mb-2">
+                                <span className="text-sm font-medium text-gray-800 truncate">
+                                    {conv.id.split('_')[1] ? new Date(parseInt(conv.id.split('_')[1])).toLocaleDateString() : 'Unknown'}
+                                </span>
+                                <span className="text-xs text-gray-500">
+                                    {conv.summary.messageCount} msgs
+                                </span>
+                            </div>
+                            <div className="text-xs text-gray-600">
+                                Intent: {conv.summary.lastIntent}
+                            </div>
+                            {conv.summary.mainTopics.length > 0 && (
+                                <div className="flex flex-wrap gap-1 mt-2">
+                                    {conv.summary.mainTopics.slice(0, 3).map((topic, idx) => (
+                                        <span key={idx} className="text-xs bg-gray-200 text-gray-600 px-2 py-1 rounded">
+                                            {topic}
+                                        </span>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    ))}
+                </div>
+            </div>
+        </div>
+    );
+
     return (
         <div className="flex flex-col h-full">
-            {/* Enhanced Intent Selector */}
+            {/* Enhanced Intent Selector with Memory Controls */}
             <div className="p-4 border-b border-gray-200 bg-gray-50">
-                <div className="flex flex-wrap gap-2 mb-3">
-                    {intentOptions.map(({ value, label, icon: Icon, description, color }) => {
-                        const isActive = intent === value;
-                        let buttonStyle = {};
-                        let buttonClass = 'flex items-center space-x-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors border ';
+                <div className="flex items-center justify-between mb-3">
+                    <div className="flex flex-wrap gap-2">
+                        {intentOptions.map(({ value, label, icon: Icon, description, color }) => {
+                            const isActive = intent === value;
+                            let buttonStyle = {};
+                            let buttonClass = 'flex items-center space-x-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors border ';
 
-                        if (isActive) {
-                            // Use inline styles for dynamic colors since Tailwind's dynamic classes don't work
-                            switch (color) {
-                                case 'blue':
-                                    buttonStyle = { backgroundColor: '#2563eb', color: 'white', borderColor: '#2563eb' };
-                                    break;
-                                case 'green':
-                                    buttonStyle = { backgroundColor: '#16a34a', color: 'white', borderColor: '#16a34a' };
-                                    break;
-                                case 'purple':
-                                    buttonStyle = { backgroundColor: '#9333ea', color: 'white', borderColor: '#9333ea' };
-                                    break;
-                                case 'indigo':
-                                    buttonStyle = { backgroundColor: '#4f46e5', color: 'white', borderColor: '#4f46e5' };
-                                    break;
-                                case 'orange':
-                                    buttonStyle = { backgroundColor: '#ea580c', color: 'white', borderColor: '#ea580c' };
-                                    break;
-                                default:
-                                    buttonStyle = { backgroundColor: '#2563eb', color: 'white', borderColor: '#2563eb' };
+                            if (isActive) {
+                                switch (color) {
+                                    case 'blue':
+                                        buttonStyle = { backgroundColor: '#2563eb', color: 'white', borderColor: '#2563eb' };
+                                        break;
+                                    case 'green':
+                                        buttonStyle = { backgroundColor: '#16a34a', color: 'white', borderColor: '#16a34a' };
+                                        break;
+                                    case 'purple':
+                                        buttonStyle = { backgroundColor: '#9333ea', color: 'white', borderColor: '#9333ea' };
+                                        break;
+                                    case 'indigo':
+                                        buttonStyle = { backgroundColor: '#4f46e5', color: 'white', borderColor: '#4f46e5' };
+                                        break;
+                                    case 'orange':
+                                        buttonStyle = { backgroundColor: '#ea580c', color: 'white', borderColor: '#ea580c' };
+                                        break;
+                                    default:
+                                        buttonStyle = { backgroundColor: '#2563eb', color: 'white', borderColor: '#2563eb' };
+                                }
+                                buttonClass += 'shadow-sm';
+                            } else {
+                                buttonClass += 'bg-white text-gray-700 hover:bg-gray-100 border-gray-300';
                             }
-                            buttonClass += 'shadow-sm';
-                        } else {
-                            buttonClass += 'bg-white text-gray-700 hover:bg-gray-100 border-gray-300';
-                        }
 
-                        return (
-                            <button
-                                key={value}
-                                onClick={() => setIntent(value)}
-                                className={buttonClass}
-                                style={isActive ? buttonStyle : {}}
-                                title={description}
-                            >
-                                <Icon size={16} />
-                                <span>{label}</span>
-                            </button>
-                        );
-                    })}
+                            return (
+                                <button
+                                    key={value}
+                                    onClick={() => setIntent(value)}
+                                    className={buttonClass}
+                                    style={isActive ? buttonStyle : {}}
+                                    title={description}
+                                >
+                                    <Icon size={16} />
+                                    <span>{label}</span>
+                                </button>
+                            );
+                        })}
+                    </div>
+
+                    {/* Memory Controls */}
+                    <div className="flex items-center space-x-2">
+                        <button
+                            onClick={() => setShowConversationPanel(true)}
+                            className="flex items-center space-x-2 px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm"
+                            title="Conversation History"
+                        >
+                            <History size={16} />
+                            <span className="hidden sm:inline">History</span>
+                        </button>
+                        <button
+                            onClick={createNewConversation}
+                            className="flex items-center space-x-2 px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm"
+                            title="New Conversation"
+                        >
+                            <Brain size={16} />
+                            <span className="hidden sm:inline">New</span>
+                        </button>
+                    </div>
+                </div>
+
+                {/* Current Conversation Info */}
+                {conversationId && (
+                    <div className="bg-white rounded-lg p-3 border border-gray-200 mb-3">
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center space-x-2">
+                                <Brain size={16} className="text-purple-600" />
+                                <span className="text-sm font-medium text-gray-700">
+                                    Current: {conversationId.split('_')[1] ? new Date(parseInt(conversationId.split('_')[1])).toLocaleString() : 'Active'}
+                                </span>
+                                {currentConversationSummary && (
+                                    <span className="text-xs text-gray-500">
+                                        ({currentConversationSummary.messageCount} messages)
+                                    </span>
+                                )}
+                            </div>
+                            <div className="flex items-center space-x-1">
+                                <button
+                                    onClick={exportConversation}
+                                    className="p-1 text-gray-500 hover:text-green-600"
+                                    title="Export Conversation"
+                                >
+                                    <Download size={14} />
+                                </button>
+                                <button
+                                    onClick={clearCurrentConversation}
+                                    className="p-1 text-gray-500 hover:text-red-600"
+                                    title="Clear Current Conversation"
+                                >
+                                    <Trash2 size={14} />
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Context Settings */}
+                <div className="flex items-center justify-between">
                     <div className="relative min-w-96" ref={contextDropdownRef}>
                         <button
                             onClick={() => setShowContextSettings(!showContextSettings)}
@@ -350,28 +564,28 @@ const ChatInterface = () => {
                         </button>
                         {showContextSettings && <ContextSettings />}
                     </div>
-                </div>
 
-                {/* Suggestions */}
-                {suggestions.length > 0 && (
-                    <div className="mt-3">
-                        <div className="text-xs text-gray-600 mb-2 flex items-center">
-                            <Lightbulb size={12} className="mr-1" />
-                            Suggestions for {intentOptions.find(opt => opt.value === intent)?.label}:
+                    {/* Suggestions */}
+                    {suggestions.length > 0 && (
+                        <div className="flex-1 ml-4">
+                            <div className="text-xs text-gray-600 mb-2 flex items-center">
+                                <Lightbulb size={12} className="mr-1" />
+                                Suggestions for {intentOptions.find(opt => opt.value === intent)?.label}:
+                            </div>
+                            <div className="flex flex-wrap gap-1">
+                                {suggestions.slice(0, 3).map((suggestion, index) => (
+                                    <button
+                                        key={index}
+                                        onClick={() => sendMessage(suggestion)}
+                                        className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors"
+                                    >
+                                        {suggestion.length > 50 ? suggestion.substring(0, 50) + '...' : suggestion}
+                                    </button>
+                                ))}
+                            </div>
                         </div>
-                        <div className="flex flex-wrap gap-1">
-                            {suggestions.slice(0, 3).map((suggestion, index) => (
-                                <button
-                                    key={index}
-                                    onClick={() => sendMessage(suggestion)}
-                                    className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors"
-                                >
-                                    {suggestion.length > 50 ? suggestion.substring(0, 50) + '...' : suggestion}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-                )}
+                    )}
+                </div>
             </div>
 
             {/* Messages */}
@@ -379,10 +593,14 @@ const ChatInterface = () => {
                 {messages.length === 0 && (
                     <div className="text-center text-gray-500 py-8">
                         <Bot size={48} className="mx-auto mb-4 text-gray-400" />
-                        <h3 className="text-lg font-medium mb-2">Welcome to Penta-B RAG Assistant</h3>
-                        <p className="mb-4">Ask questions about your codebase, generate components, or get architecture insights.</p>
+                        <h3 className="text-lg font-medium mb-2">Welcome to Penta-B RAG Assistant with Memory</h3>
+                        <p className="mb-4">I'll remember our conversation to provide better contextual responses. Ask questions about your codebase, generate components, or get architecture insights.</p>
                         <div className="text-sm text-gray-400">
                             <div className="flex items-center justify-center space-x-4 mb-2">
+                                <div className="flex items-center space-x-1">
+                                    <Brain size={14} className="text-purple-600" />
+                                    <span>Conversation Memory</span>
+                                </div>
                                 <div className="flex items-center space-x-1">
                                     <Map size={14} className="text-purple-600" />
                                     <span>Ol-Map Integration</span>
@@ -396,7 +614,7 @@ const ChatInterface = () => {
                                     <span>Plugin System</span>
                                 </div>
                             </div>
-                            <p>Ready to help with Penta-B development workflows</p>
+                            <p>Ready to help with Penta-B development workflows with contextual awareness</p>
                         </div>
                     </div>
                 )}
@@ -538,12 +756,13 @@ const ChatInterface = () => {
                                     <Bot size={20} className="text-blue-600" />
                                 </div>
                                 <div className="flex items-center space-x-2">
+                                    <Brain size={16} className="text-purple-400 animate-pulse" />
                                     <Cpu size={16} className="text-gray-400 animate-pulse" />
-                                    <span className="text-sm text-gray-600">Processing with Penta-B context...</span>
+                                    <span className="text-sm text-gray-600">Processing with memory and Penta-B context...</span>
                                     <div className="flex space-x-1">
                                         <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce"></div>
-                                        <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
-                                        <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                                        <div className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
+                                        <div className="w-2 h-2 bg-green-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
                                     </div>
                                 </div>
                             </div>
@@ -554,7 +773,7 @@ const ChatInterface = () => {
                 <div ref={messagesEndRef} />
             </div>
 
-            {/* Enhanced Input */}
+            {/* Enhanced Input with Memory Indicators */}
             <div className="p-4 border-t border-gray-200 bg-white">
                 <div className="flex space-x-3">
                     <div className="flex-1 relative">
@@ -586,7 +805,7 @@ const ChatInterface = () => {
                     </button>
                 </div>
 
-                {/* Context indicator */}
+                {/* Enhanced context indicator with memory info */}
                 <div className="mt-2 flex items-center justify-between text-xs text-gray-500">
                     <div className="flex items-center space-x-2">
                         <span className="font-medium">Active Context:</span>
@@ -621,11 +840,22 @@ const ChatInterface = () => {
                                 </span>
                             )}
                     </div>
-                    <span className="bg-gray-100 text-gray-600 px-2 py-1 rounded">
-                        Max: {contextSettings.maxSources} sources
-                    </span>
+                    <div className="flex items-center space-x-2">
+                        {conversationId && (
+                            <span className="bg-purple-100 text-purple-700 px-2 py-1 rounded flex items-center space-x-1">
+                                <Brain size={10} />
+                                <span>Memory Active</span>
+                            </span>
+                        )}
+                        <span className="bg-gray-100 text-gray-600 px-2 py-1 rounded">
+                            Max: {contextSettings.maxSources} sources
+                        </span>
+                    </div>
                 </div>
             </div>
+
+            {/* Conversation Panel */}
+            {showConversationPanel && <ConversationPanel />}
 
             <style jsx>{`
                 .code-block {
@@ -704,5 +934,6 @@ const ChatInterface = () => {
             `}</style>
         </div>
     );
-}
+};
+
 export default ChatInterface;
