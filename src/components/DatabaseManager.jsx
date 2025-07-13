@@ -293,8 +293,8 @@ const DatabaseManager = () => {
                                 <div
                                     key={source}
                                     className={`p-3 rounded-lg border cursor-pointer transition-all ${selectedSource === source
-                                            ? 'bg-blue-50 border-blue-200 shadow-sm'
-                                            : 'bg-gray-50 border-gray-200 hover:bg-gray-100'
+                                        ? 'bg-blue-50 border-blue-200 shadow-sm'
+                                        : 'bg-gray-50 border-gray-200 hover:bg-gray-100'
                                         }`}
                                     onClick={() => loadDocuments(source)}
                                 >
@@ -330,7 +330,7 @@ const DatabaseManager = () => {
                 </div>
 
                 {/* Content Panel */}
-                <div className="flex-1 bg-white rounded-lg border border-gray-200 p-6 flex flex-col">
+                <div className="flex-1 overflow-auto bg-white rounded-lg border border-gray-200 p-6 flex flex-col">
                     {/* Search Results */}
                     {searchResults.length > 0 && (
                         <div className="mb-6">
@@ -470,7 +470,7 @@ const DatabaseManager = () => {
                                                         )}
                                                         {doc.metadata.components && doc.metadata.components.length > 0 && (
                                                             <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded">
-                                                                Components: {doc.metadata.components.join(', ')}
+                                                                Components: {doc.metadata.components}
                                                             </span>
                                                         )}
                                                     </div>
