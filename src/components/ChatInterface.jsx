@@ -19,6 +19,7 @@ const ChatInterface = () => {
     });
     const [showContextSettings, setShowContextSettings] = useState(false);
     const [suggestions, setSuggestions] = useState([]);
+    const [memoryConfig, setMemoryConfig] = useState({});
     const messagesEndRef = useRef(null);
     const contextDropdownRef = useRef(null);
     const { request, loading } = useApi();
@@ -37,6 +38,7 @@ const ChatInterface = () => {
         if (!conversationId) {
             setConversationId(`conv_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`);
         }
+        loadMemoryConfig();
     }, []);
 
     useEffect(() => {
@@ -61,6 +63,13 @@ const ChatInterface = () => {
 
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    };
+
+    const loadMemoryConfig = () => {
+        const config = localStorage.getItem('memoryConfig');
+        if (config) {
+            setMemoryConfig(JSON.parse(config));
+        }
     };
 
     const loadSuggestions = () => {
@@ -210,7 +219,8 @@ const ChatInterface = () => {
                 message: messageToSend,
                 intent: intent || 'qa',
                 context: contextSettings,
-                conversationId: conversationId
+                conversationId: conversationId,
+                memoryConfig: memoryConfig
             };
 
             console.log('🚀 Sending chat request with memory:', requestPayload);
