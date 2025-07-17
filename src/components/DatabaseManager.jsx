@@ -175,7 +175,7 @@ const DatabaseManager = () => {
     );
 
     return (
-        <div className="h-full flex flex-col space-y-6 p-6">
+        <>
             {/* Header with Statistics */}
             <div className="bg-white rounded-lg border border-gray-200 p-6">
                 <div className="flex items-center justify-between mb-6">
@@ -575,7 +575,7 @@ const DatabaseManager = () => {
                     </div>
                 </div>
             </div>
-        </div>
+        </>
     );
 };
 
